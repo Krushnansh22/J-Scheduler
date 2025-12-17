@@ -516,13 +516,12 @@ public class ModernCalendarApp {
             if (!events.isEmpty()) {
                 g2.setFont(Theme.FONT_SMALL);
                 int yOffset = 30;
-                int maxEvents = Math.min(3, events.size()); // Show max 3 events
+                int maxEvents = Math.min(3, events.size());
                 
                 for (int i = 0; i < maxEvents; i++) {
                     CalendarEvent evt = events.get(i);
                     g2.setColor(evt.getPriority().color);
                     
-                    // Truncate title if too long
                     String title = evt.getTitle();
                     FontMetrics fm = g2.getFontMetrics();
                     if (fm.stringWidth(title) > w - 10) {
@@ -532,20 +531,17 @@ public class ModernCalendarApp {
                         title = title + "...";
                     }
                     
-                    // Draw colored background for event
                     int textWidth = fm.stringWidth(title);
                     g2.setColor(new Color(evt.getPriority().color.getRed(), 
                                          evt.getPriority().color.getGreen(), 
                                          evt.getPriority().color.getBlue(), 30));
                     g2.fillRoundRect(5, yOffset - 10, Math.min(textWidth + 6, w - 10), 14, 4, 4);
                     
-                    // Draw text
                     g2.setColor(evt.getPriority().color.darker());
                     g2.drawString(title, 7, yOffset);
                     yOffset += 16;
                 }
                 
-                // Show "+N more" if there are more events
                 if (events.size() > maxEvents) {
                     g2.setColor(Theme.TEXT_SECONDARY);
                     g2.drawString("+" + (events.size() - maxEvents) + " more", 7, yOffset);
@@ -565,15 +561,22 @@ public class ModernCalendarApp {
         private List<CalendarCell> cells = new ArrayList<>();
         private CalendarCell selectedCell = null;
         private JLabel monthLabel;
+        private JPanel gridContainer;
 
         public CalendarPanel(EventManager manager, Consumer<LocalDate> dateCallback) {
             this.manager = manager;
             this.dateCallback = dateCallback;
             this.currentMonth = LocalDate.now().withDayOfMonth(1);
+            
             setLayout(new BorderLayout());
             setBackground(Color.WHITE);
-            setBorder(new EmptyBorder(10, 10, 10, 10));
+            
             initHeader();
+            
+            gridContainer = new JPanel(new BorderLayout());
+            gridContainer.setBackground(Color.WHITE);
+            add(gridContainer, BorderLayout.CENTER);
+            
             refresh();
         }
 
@@ -586,15 +589,29 @@ public class ModernCalendarApp {
             monthLabel.setFont(Theme.FONT_HEADER);
             monthLabel.setForeground(Theme.TEXT_PRIMARY);
 
+            // Navigation Buttons
             StyledButton prev = new StyledButton("<", Theme.BG_APP, Theme.TEXT_PRIMARY);
             StyledButton next = new StyledButton(">", Theme.BG_APP, Theme.TEXT_PRIMARY);
-            prev.setPreferredSize(new Dimension(40, 35));
-            next.setPreferredSize(new Dimension(40, 35));
+            StyledButton todayBtn = new StyledButton("Today", Theme.SELECTION, Theme.ACCENT);
+            
+            prev.setPreferredSize(new Dimension(50, 35));
+            next.setPreferredSize(new Dimension(50, 35));
+            todayBtn.setPreferredSize(new Dimension(80, 35));
 
             prev.addActionListener(e -> { currentMonth = currentMonth.minusMonths(1); refresh(); });
             next.addActionListener(e -> { currentMonth = currentMonth.plusMonths(1); refresh(); });
+            todayBtn.addActionListener(e -> { 
+                currentMonth = LocalDate.now().withDayOfMonth(1); 
+                refresh(); 
+            });
 
-            header.add(prev, BorderLayout.WEST);
+            // Layout for Left (Prev + Today)
+            JPanel leftActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+            leftActions.setBackground(Color.WHITE);
+            leftActions.add(prev);
+            leftActions.add(todayBtn);
+
+            header.add(leftActions, BorderLayout.WEST);
             header.add(monthLabel, BorderLayout.CENTER);
             header.add(next, BorderLayout.EAST);
             add(header, BorderLayout.NORTH);
@@ -604,21 +621,18 @@ public class ModernCalendarApp {
             this.currentMonth = date.withDayOfMonth(1);
             refresh();
         }
-        
-        public LocalDate getCurrentSelection() { return currentMonth; }
 
         public void refresh() {
             monthLabel.setText(currentMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy")));
-            Component[] comps = getComponents();
-            for(Component c : comps) if(!(c instanceof JPanel) || ((JPanel)c).getLayout() instanceof BorderLayout) continue; else remove(c);
 
-            JPanel gridContainer = new JPanel(new BorderLayout());
-            gridContainer.setBackground(Color.WHITE);
-            
+            gridContainer.removeAll();
+            cells.clear();
+            selectedCell = null;
+
             JPanel dayNames = new JPanel(new GridLayout(1, 7));
             dayNames.setBackground(Color.WHITE);
             dayNames.setBorder(new EmptyBorder(0,0,5,0));
-            String[] days = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+            String[] days = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
             for(String d : days) {
                 JLabel l = new JLabel(d, SwingConstants.CENTER);
                 l.setFont(Theme.FONT_BOLD);
@@ -628,30 +642,20 @@ public class ModernCalendarApp {
             gridContainer.add(dayNames, BorderLayout.NORTH);
 
             JPanel grid = new JPanel(new GridLayout(0, 7)); 
-            cells.clear();
-            selectedCell = null;
-            
-            // Get the first day of the month
-            LocalDate firstDayOfMonth = currentMonth.withDayOfMonth(1);
-            
-            // Get day of week for first day (1=Monday, 7=Sunday in Java)
-            // We need to convert to 0=Sunday for our calendar
-            int dayOfWeek = firstDayOfMonth.getDayOfWeek().getValue();
-            if (dayOfWeek == 7) dayOfWeek = 0; // Sunday = 0
-            
-            // Start from the Sunday of the week containing the first day
-            LocalDate iterator = firstDayOfMonth.minusDays(dayOfWeek);
+            LocalDate firstDay = currentMonth.withDayOfMonth(1);
+            int startDayOfWeek = firstDay.getDayOfWeek().getValue() - 1; 
+            LocalDate displayDate = firstDay.minusDays(startDayOfWeek);
 
-            // Create 6 rows of 7 days (42 days total)
             for(int i=0; i<42; i++) {
-                boolean isCurrent = iterator.getMonth() == currentMonth.getMonth() && 
-                                   iterator.getYear() == currentMonth.getYear();
-                boolean isToday = iterator.equals(LocalDate.now());
-                CalendarCell cell = new CalendarCell(iterator, isCurrent, isToday);
-                cell.setEvents(manager.getEvents(iterator));
+                boolean isCurrent = displayDate.getMonth() == currentMonth.getMonth() && 
+                                   displayDate.getYear() == currentMonth.getYear();
+                boolean isToday = displayDate.equals(LocalDate.now());
+                
+                CalendarCell cell = new CalendarCell(displayDate, isCurrent, isToday);
+                cell.setEvents(manager.getEvents(displayDate));
                 cell.setPreferredSize(new Dimension(100, 80));
                 
-                final LocalDate d = iterator;
+                final LocalDate d = displayDate;
                 final CalendarCell c = cell;
                 
                 cell.addMouseListener(new MouseAdapter() {
@@ -665,13 +669,15 @@ public class ModernCalendarApp {
 
                 cells.add(cell);
                 grid.add(cell);
-                iterator = iterator.plusDays(1);
+                displayDate = displayDate.plusDays(1);
             }
+            
             gridContainer.add(grid, BorderLayout.CENTER);
-            add(gridContainer, BorderLayout.CENTER);
-            revalidate();
-            repaint();
+            gridContainer.revalidate();
+            gridContainer.repaint();
         }
+
+        public LocalDate getCurrentSelection() { return currentMonth; }
     }
 
     static class Sidebar extends JPanel {
