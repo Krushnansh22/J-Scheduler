@@ -1,6 +1,8 @@
 # Compiled class files
 *.class
 
+*.dat
+*.txt
 # Log files
 *.log
 
@@ -84,3 +86,4 @@ dist/
 # Backup files
 *.backup
 *_backup
+
